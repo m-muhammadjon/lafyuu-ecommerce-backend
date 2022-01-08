@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
-from rest_framework import status
+from django_filters import rest_framework as filters
+from rest_framework import status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -7,11 +8,15 @@ from rest_framework_jwt.settings import api_settings
 
 from account.models import Verification
 from account.views import email_sender
-from .serializers import UserSerializer, UserUpdateSerializer
+from shop.filters import ProductFilter
+from shop.models import Product
+from .serializers import UserSerializer, UserUpdateSerializer, ProductSerializer
 
 jwt_payload_handler = api_settings.JWT_PAYLOAD_HANDLER
 jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
 
+
+# User API
 
 @api_view(['POST'])
 def user_create(request):
@@ -61,11 +66,11 @@ def user_update(request):
     if serializer.is_valid():
         serializer.save()
         if email:
-            print(request.data.get('email'))
             Verification.objects.get_or_create(user=request.user)
             email_sender(user.id)
             user.is_verified = False
             user.save()
+            return Response({'message': 'We Will Send verification to your New Email'}, status=status.HTTP_200_OK)
         return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -86,3 +91,54 @@ def update_password(request):
         else:
             return Response({'status': 'passwords don\'t match'}, status=status.HTTP_400_BAD_REQUEST)
     return Response({'status': 'wrong password'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Product API
+
+'''
+from django.db import connection, reset_queries
+import time
+import functools
+
+
+def query_debugger(func):
+    @functools.wraps(func)
+    def inner_func(*args, **kwargs):
+        reset_queries()
+
+        start_queries = len(connection.queries)
+
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+
+        end_queries = len(connection.queries)
+        print(connection.queries)
+        print(f"Function : {func.__name__}")
+        print(f"Number of Queries : {end_queries - start_queries}")
+        print(f"Finished in : {(end - start):.2f}s")
+        return result
+
+    return inner_func
+
+@query_debugger
+def book_list(re):
+    queryset = Product.objects.all()
+        # .prefetch_related("images") \
+        # .prefetch_related("colors") \
+        # .prefetch_related("sizes") \
+        # .all()
+    data = ProductSerializer(queryset, many=True,).data
+    return JsonResponse({"data":data})
+    # return books
+'''
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.prefetch_related('images') \
+        .prefetch_related('sizes') \
+        .prefetch_related('colors') \
+        .all()
+    serializer_class = ProductSerializer
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = ProductFilter
